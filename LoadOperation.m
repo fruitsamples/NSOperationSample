@@ -2,7 +2,7 @@
      File: LoadOperation.m 
  Abstract: NSOperation code for examining image files.
   
-  Version: 1.2 
+  Version: 1.3 
   
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple 
  Inc. ("Apple") in consideration of your agreement to the following 
@@ -42,34 +42,57 @@
  STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE 
  POSSIBILITY OF SUCH DAMAGE. 
   
- Copyright (C) 2009 Apple Inc. All Rights Reserved. 
+ Copyright (C) 2012 Apple Inc. All Rights Reserved. 
   
  */
 
 #import "LoadOperation.h"
 
-@implementation LoadOperation
+// key for obtaining the current scan count
+NSString *kScanCountKey = @"scanCount";
+
+// key for obtaining the path of an image fiel
+NSString *kPathKey = @"path";
+
+// key for obtaining the size of an image file
+NSString *kSizeKey = @"size";
+
+// key for obtaining the name of an image file
+NSString *kNameKey = @"name";
+
+// key for obtaining the mod date of an image file
+NSString *kModifiedKey = @"modified";
 
 // NSNotification name to tell the Window controller an image file as found
-NSString *LoadImageDidFinish = @"LoadImageDidFinish";
+NSString *kLoadImageDidFinish = @"LoadImageDidFinish";
+
+@interface LoadOperation ()
+{
+    NSURL *loadURL;
+    NSInteger ourScanCount;
+}
+
+@property (retain) NSURL *loadURL;
+
+@end
+
+
+@implementation LoadOperation
+
+@synthesize loadURL;
 
 // -------------------------------------------------------------------------------
 //	initWithPath:path
 // -------------------------------------------------------------------------------
-- (id)initWithPath:(NSString *)path
+- (id)initWithURL:(NSURL *)url scanCount:(NSInteger)scanCount
 {
 	self = [super init];
-    loadPath = [path retain];
+    if (self)
+    {
+        self.loadURL = url;
+        ourScanCount = scanCount;
+    }
     return self;
-}
-
-// -------------------------------------------------------------------------------
-//	dealloc:
-// -------------------------------------------------------------------------------
-- (void)dealloc
-{
-    [loadPath release];
-    [super dealloc];
 }
 
 // -------------------------------------------------------------------------------
@@ -77,55 +100,16 @@ NSString *LoadImageDidFinish = @"LoadImageDidFinish";
 //
 //	Uses LaunchServices and UTIs to detect if a given file path is an image file.
 // -------------------------------------------------------------------------------
-- (BOOL)isImageFile:(NSString *)filePath
+- (BOOL)isImageFile:(NSURL *)url
 {
     BOOL isImageFile = NO;
-    FSRef fileRef;
-    Boolean isDirectory;
-
-    if (FSPathMakeRef((const UInt8 *)[filePath fileSystemRepresentation], &fileRef, &isDirectory) == noErr)
+    
+    NSString *utiValue;
+    [url getResourceValue:&utiValue forKey:NSURLTypeIdentifierKey error:nil];
+    if (utiValue)
     {
-        // get the content type (UTI) of this file
-        CFDictionaryRef values = NULL;
-        CFStringRef attrs[1] = { kLSItemContentType };
-        CFArrayRef attrNames = CFArrayCreate(NULL, (const void **)attrs, 1, NULL);
-
-        if (LSCopyItemAttributes(&fileRef, kLSRolesViewer, attrNames, &values) == noErr)
-        {
-            // verify that this is a file that the Image I/O framework supports
-            if (values != NULL)
-            {
-                CFTypeRef uti = CFDictionaryGetValue(values, kLSItemContentType);
-                if (uti != NULL)
-                {
-                    CFArrayRef supportedTypes = CGImageSourceCopyTypeIdentifiers();
-                    CFIndex i, typeCount = CFArrayGetCount(supportedTypes);
-
-                    for (i = 0; i < typeCount; i++)
-                    {
-                        CFStringRef supportedUTI = CFArrayGetValueAtIndex(supportedTypes, i);
-
-                        // make sure the supported UTI conforms only to "public.image" (this will skip PDF)
-                        if (UTTypeConformsTo(supportedUTI, CFSTR("public.image")))
-                        {
-                            if (UTTypeConformsTo(uti, supportedUTI))
-                            {
-                                isImageFile = YES;
-                                break;
-                            }
-                        }
-                    }
-
-                    CFRelease(supportedTypes);
-                }
-
-                CFRelease(values);
-            }
-        }
-
-        CFRelease(attrNames);
+        isImageFile = UTTypeConformsTo((__bridge CFStringRef)utiValue, kUTTypeImage);
     }
-
     return isImageFile;
 }
 
@@ -138,61 +122,43 @@ NSString *LoadImageDidFinish = @"LoadImageDidFinish";
 //	We could use NSFileManager, but to be on the safe side we will use the
 //	File Manager APIs to get the file attributes.
 // -------------------------------------------------------------------------------
--(void)main
+- (void)main
 {
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	
 	if (![self isCancelled])
 	{
 		// test to see if it's an image file
-		if ([self isImageFile: loadPath])
+		if ([self isImageFile:loadURL])
 		{
 			// in this example, we just get the file's info (mod date, file size) and report it to the table view
 			//
-			FSRef ref;
-			Boolean isDirectory;
-			if (FSPathMakeRef((const UInt8 *)[loadPath fileSystemRepresentation], &ref, &isDirectory) == noErr)
-			{
-				FSCatalogInfo catInfo;
-				if (FSGetCatalogInfo(&ref, (kFSCatInfoContentMod | kFSCatInfoDataSizes), &catInfo, nil, nil, nil) == noErr)
-				{
-					CFAbsoluteTime cfTime;
-					if (UCConvertUTCDateTimeToCFAbsoluteTime(&catInfo.contentModDate, &cfTime) == noErr)
-					{
-						CFDateRef dateRef = nil;
-						dateRef = CFDateCreate(kCFAllocatorDefault, cfTime);
-						if (dateRef != nil)
-						{
-							NSDateFormatter* formatter = [[[NSDateFormatter alloc] init] autorelease];
-							[formatter setTimeStyle:NSDateFormatterNoStyle];
-							[formatter setDateStyle:NSDateFormatterShortStyle];
-							
-							NSString *modDateStr = [formatter stringFromDate:(NSDate*)dateRef];
-					
-							NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:
-														[loadPath lastPathComponent], @"name",
-														[loadPath stringByDeletingLastPathComponent], @"path",
-														modDateStr, @"modified",
-														[NSString stringWithFormat:@"%ld", catInfo.dataPhysicalSize], @"size",
-													nil];
-						
-							if (![self isCancelled])
-							{
-								// for the purposes of this sample, we're just going to post the information
-								// out there and let whoever might be interested receive it (in our case its MyWindowController).
-								//
-								[[NSNotificationCenter defaultCenter] postNotificationName:LoadImageDidFinish object:nil userInfo:info];
-							}
-							
-							CFRelease(dateRef);
-						}
-					}
-				}		
-			}
+			NSNumber *fileSize;
+            [self.loadURL getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
+            
+            NSDate *fileCreationDate;
+            [self.loadURL getResourceValue:&fileCreationDate forKey:NSURLCreationDateKey error:nil];
+            
+            NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
+            [formatter setTimeStyle:NSDateFormatterNoStyle];
+            [formatter setDateStyle:NSDateFormatterShortStyle];
+            NSString *modDateStr = [formatter stringFromDate:fileCreationDate];
+            
+            NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:
+                                  [self.loadURL lastPathComponent], kNameKey,
+                                  [self.loadURL absoluteString], kPathKey,
+                                  modDateStr, kModifiedKey,
+                                  [NSString stringWithFormat:@"%ld", [fileSize integerValue]], kSizeKey,
+                                  [NSNumber numberWithInteger:ourScanCount], kScanCountKey,  // pass back to check if user cancelled/started a new scan
+                                  nil];
+            
+            if (![self isCancelled])
+            {
+                // for the purposes of this sample, we're just going to post the information
+                // out there and let whoever might be interested receive it (in our case its MyWindowController).
+                //
+                [[NSNotificationCenter defaultCenter] postNotificationName:kLoadImageDidFinish object:nil userInfo:info];
+            }
 		}
 	}
-	
-	[pool release];
 }
 
 @end

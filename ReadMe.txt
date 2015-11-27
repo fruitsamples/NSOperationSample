@@ -6,8 +6,7 @@ The NSOperation class manages the execution of a single encapsulated task.  Oper
 
 ===========================================================================
 Sample Requirements
-The supplied Xcode project was created using Xcode v3.0 running under Mac OS X 10.5 or later.
-The project will create a Universal Binary.
+The supplied Xcode project was created using Xcode v4.3 or later running under Mac OS X 10.6.x or later.  It also uses ARC (Objective-C Automatic Reference Counting). 
 
 ===========================================================================
 About the Sample
@@ -20,16 +19,9 @@ Simply build and run the sample using Xcode.  Choose a directory to start the se
 ===========================================================================
 Changes from Previous Versions:
 
-Version 1.0 - First version.
-Version 1.1 - Fixed memory leak, some code reformatting.
-
-===========================================================================
-Copyright (C) 2006-2009 Apple Inc. All rights reserved.
-
-Feedback and Bug Reports
-Please send all feedback about this sample by connecting to the Contact ADC page.
-Please submit any bug reports about this sample to the Bug Reporting page.
+1.0 - First version.
+1.1 - Fixed memory leak, some code reformatting.
+1.3 - Upgraded to Xcode 4.3 and Mac OS X 10.7, replaced one deprecated API use, adopted NSURL APIs.
 
 
-Developer Technical Support
-The Apple Developer Connection Developer Technical Support (DTS) team is made up of highly qualified engineers with development expertise in key Apple technologies. Whether you need direct one-on-one support troubleshooting issues, hands-on assistance to accelerate a project, or helpful guidance to the right documentation and sample code, Apple engineers are ready to help you.  Refer to the Apple Developer Technical Support page.
+Copyright (C) 2006-2012 Apple Inc. All rights reserved.

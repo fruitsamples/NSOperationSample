@@ -2,7 +2,7 @@
      File: MyWindowController.h 
  Abstract: Header file for this sample's main NSWindowController "TestWindow".
   
-  Version: 1.2 
+  Version: 1.3 
   
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple 
  Inc. ("Apple") in consideration of your agreement to the following 
@@ -42,7 +42,7 @@
  STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE 
  POSSIBILITY OF SUCH DAMAGE. 
   
- Copyright (C) 2009 Apple Inc. All Rights Reserved. 
+ Copyright (C) 2012 Apple Inc. All Rights Reserved. 
   
  */
 
@@ -50,17 +50,11 @@
 
 @interface MyWindowController : NSWindowController
 {
-	IBOutlet NSTableView			*myTableView;		// the table holding the image paths
-	NSMutableArray					*tableRecords;		// the data source for the table
+	IBOutlet NSTableView *myTableView;	// the table holding the image paths
 	
-	IBOutlet NSProgressIndicator	*myProgressInd;
-	IBOutlet NSButton				*myStartButton;
-	IBOutlet NSButton				*myStopButton;
-    
-	NSOperationQueue				*queue;				// the queue of NSOperations (1 for parsing file system, 2+ for loading image files)
-	NSTimer							*timer;				// update timer for progress indicator
-	
-	NSMutableString					*imagesFoundStr;	// indicates the number of images found, (NSTextField is bound to this value)
+	IBOutlet NSProgressIndicator *myProgressInd;
+	IBOutlet NSButton *myStartButton;
+	IBOutlet NSButton *myStopButton;
 }
 
 - (IBAction)startAction:(id)sender;

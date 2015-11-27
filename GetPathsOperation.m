@@ -2,7 +2,7 @@
      File: GetPathsOperation.m 
  Abstract: NSOperation code for directory and file enumeration.
   
-  Version: 1.2 
+  Version: 1.3 
   
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple 
  Inc. ("Apple") in consideration of your agreement to the following 
@@ -42,44 +42,42 @@
  STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE 
  POSSIBILITY OF SUCH DAMAGE. 
   
- Copyright (C) 2009 Apple Inc. All Rights Reserved. 
+ Copyright (C) 2012 Apple Inc. All Rights Reserved. 
   
  */
 
 #import "GetPathsOperation.h"
 #import "LoadOperation.h"
 
+@interface GetPathsOperation ()
+{
+    NSURL *rootURL;
+    NSOperationQueue *queue;
+    NSInteger ourScanCount;
+}
+
+@property (retain) NSURL *rootURL;
+@property (retain) NSOperationQueue *queue;
+
+@end
+
 @implementation GetPathsOperation
+
+@synthesize rootURL, queue;
 
 // -------------------------------------------------------------------------------
 //	initWithRootPath:
 // -------------------------------------------------------------------------------
-- (id)initWithRootPath:(NSString *)pp operationClass:(Class)cc queue:(NSOperationQueue *)qq
+- (id)initWithRootURL:(NSURL *)url queue:(NSOperationQueue *)qq scanCount:(NSInteger)scanCount
 {
     self = [super init];
-	
-    // the operation class must have an -initWithPath: method.
-    if (![cc instancesRespondToSelector:@selector(initWithPath:)])
-	{
-		[self release];
-		return nil;
+    if (self)
+    {
+        self.rootURL = url;
+        self.queue = qq;
+        ourScanCount = scanCount;
     }
-	
-    rootPath = [pp retain];
-    opClass = cc;
-    queue = [qq retain];
-	
     return self;
-}
-
-// -------------------------------------------------------------------------------
-//	dealloc:
-// -------------------------------------------------------------------------------
-- (void)dealloc
-{
-    [rootPath release];
-    [queue release];
-    [super dealloc];
 }
 
 // -------------------------------------------------------------------------------
@@ -87,43 +85,23 @@
 // -------------------------------------------------------------------------------
 - (void)main
 {	
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-
-    // iterate through the contents of "rootPath"
-	NSString* sourceDirectoryFilePath = nil;
-	NSDirectoryEnumerator* sourceDirectoryFilePathEnumerator = [[NSFileManager defaultManager] enumeratorAtPath:rootPath];
-
-	while (sourceDirectoryFilePath = [sourceDirectoryFilePathEnumerator nextObject])
-	{
-		if ([self isCancelled])
+	NSDirectoryEnumerator *itr =
+        [[NSFileManager defaultManager] enumeratorAtURL:self.rootURL
+                             includingPropertiesForKeys:nil
+                                                options:(NSDirectoryEnumerationSkipsHiddenFiles | NSDirectoryEnumerationSkipsPackageDescendants)
+                                           errorHandler:nil];
+    for (NSURL *url in itr)
+    {
+        if ([self isCancelled])
 		{
 			break;	// user cancelled this operation
 		}
-				
-		NSDictionary *sourceDirectoryFileAttributes = [sourceDirectoryFilePathEnumerator fileAttributes];
-		
-		NSString *sourceDirectoryFileType = [sourceDirectoryFileAttributes objectForKey:NSFileType];
-		
-		if ([sourceDirectoryFileType isEqualToString:NSFileTypeRegular] == YES)
-		{
-			NSString *fullSourceDirectoryFilePath = [rootPath stringByAppendingPathComponent:sourceDirectoryFilePath];
-			if (fullSourceDirectoryFilePath)
-			{
-				// use NSOperation subclass "LoadOperation"
-				LoadOperation *op = [[LoadOperation alloc] initWithPath:fullSourceDirectoryFilePath];
-				[op setQueuePriority: 2.0];	// second priority
-				[queue addOperation: op];	// this will start the load operation
-				[op release];
-			
-				if ([self isCancelled])
-				{
-					break;	// user cancelled this operation
-				}
-			}
-		}
-	}
-	
-	[pool release];
+    
+        // use NSOperation subclass "LoadOperation"
+        LoadOperation *op = [[LoadOperation alloc] initWithURL:url scanCount:ourScanCount];
+        [op setQueuePriority:2.0];      // second priority
+        [self.queue addOperation:op];	// this will start the load operation
+    }
 }
 
 @end

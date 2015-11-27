@@ -2,7 +2,7 @@
      File: MyWindowController.m 
  Abstract: Header file for this sample's main NSWindowController "TestWindow".
   
-  Version: 1.2 
+  Version: 1.3 
   
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple 
  Inc. ("Apple") in consideration of your agreement to the following 
@@ -42,7 +42,7 @@
  STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE 
  POSSIBILITY OF SUCH DAMAGE. 
   
- Copyright (C) 2009 Apple Inc. All Rights Reserved. 
+ Copyright (C) 2012 Apple Inc. All Rights Reserved. 
   
  */
 
@@ -50,28 +50,37 @@
 #import "GetPathsOperation.h"
 #import "LoadOperation.h"
 
-// -------------------------------------------------------------------------------
-@interface MyWindowController (Private)
+@interface MyWindowController ()
+{
+    NSMutableArray *tableRecords;    // the data source for the table
+    
+    NSOperationQueue *queue;         // queue of NSOperations (1 for parsing file system, 2+ for loading image files)
+	NSTimer	*timer;                  // update timer for progress indicator
+	
+	NSMutableString	*imagesFoundStr; // indicates number of images found, (NSTextField is bound to this value)
+    
+    NSInteger scanCount;
+}
 
-- (void)loadFilePaths:(NSString *)fromPath;
-- (void)setResultsString:(NSString *)string;
-- (void)updateProgress:(NSTimer *)t;
-- (NSTimer *)timer;
-- (void)setTimer:(NSTimer *)value;
-- (void)updateCountIndicator;
+@property (retain) NSTimer *timer;
 
 @end
 
 
 @implementation MyWindowController
 
+@synthesize timer;
+
 // -------------------------------------------------------------------------------
-//	awakeFromNib:
+//	awakeFromNib
 // -------------------------------------------------------------------------------
 - (void)awakeFromNib
 {	
 	// register for the notification when an image file has been loaded by the NSOperation: "LoadOperation"
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(anyThread_handleLoadedImages:) name:LoadImageDidFinish object:nil];
+	[[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(anyThread_handleLoadedImages:)
+                                                 name:kLoadImageDidFinish
+                                               object:nil];
 	
 	// make sure double-click on a table row calls "doubleClickAction"
 	[myTableView setTarget:self];
@@ -79,34 +88,35 @@
 }
 
 // -------------------------------------------------------------------------------
-//	init:
+//	init
 // -------------------------------------------------------------------------------
 - (id)init
 {
-	[super init];
-	
-	queue = [[NSOperationQueue alloc] init];
-	tableRecords = [[NSMutableArray alloc] init];
-	
+	self = [super init];
+	if (self)
+    {
+        queue = [[NSOperationQueue alloc] init];
+        tableRecords = [[NSMutableArray alloc] init];
+	}
 	return self;
 }
 
 // -------------------------------------------------------------------------------
-//	dealloc:
+//	setResultsString:string
 // -------------------------------------------------------------------------------
--(void)dealloc
+- (void)setResultsString:(NSString *)string
 {
-	[tableRecords release];
-	[queue release];
-	[super dealloc];
+	[self willChangeValueForKey:@"imagesFoundStr"];
+	imagesFoundStr = [NSMutableString stringWithString:string];
+	[self didChangeValueForKey:@"imagesFoundStr"];
 }
 
 // -------------------------------------------------------------------------------
-//	updateCountIndicator:
+//	updateCountIndicator
 //
 //	Canned routine for updating the number of items in the table (used in several places).
 // -------------------------------------------------------------------------------
--(void)updateCountIndicator
+- (void)updateCountIndicator
 {
 	// set the number of images found indicator string
 	NSString *resultStr = [NSString stringWithFormat:@"Images found: %ld", [tableRecords count]];
@@ -143,14 +153,23 @@
 	// if we are to continuously add found image files to the table view.
 	// Otherwise, we let any remaining notifications drain out.
 	//
-	if ([myStopButton isEnabled])
-	{
-		[tableRecords addObject:[note userInfo]];
-		[myTableView reloadData];
-		
-		// set the number of images found indicator string
-		[self updateCountIndicator];
-	}
+	NSDictionary *notifData = [note userInfo];
+    
+    NSNumber *loadScanCountNum = [notifData valueForKey:kScanCountKey];
+    NSInteger loadScanCount = [loadScanCountNum integerValue];
+    
+    if ([myStopButton isEnabled])
+    {
+        // make sure the current scan matches the scan of our loaded image
+        if (scanCount == loadScanCount)
+        {
+            [tableRecords addObject:notifData];
+            [myTableView reloadData];
+            
+            // set the number of images found indicator string
+            [self updateCountIndicator];
+        }
+    }
 }
 
 // -------------------------------------------------------------------------------
@@ -169,13 +188,7 @@
 }
 
 // -------------------------------------------------------------------------------
-//	alertDidEnd:
-// -------------------------------------------------------------------------------
--(void)alertDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(void *)contextInfo
-{}
-
-// -------------------------------------------------------------------------------
-//	windowShouldClose:
+//	windowShouldClose:sender
 // -------------------------------------------------------------------------------
 - (BOOL)windowShouldClose:(id)sender
 {
@@ -184,39 +197,28 @@
 	
 	if (numOperationsRunning > 0)
 	{
-		NSAlert *alert = [NSAlert alertWithMessageText: @"Image files are currently loading."
-									defaultButton: @"OK"
-								  alternateButton: nil
-									  otherButton: nil
-						informativeTextWithFormat: @"Please click the \"Stop\" button before closing."];
-		[alert beginSheetModalForWindow: [self window] modalDelegate:self didEndSelector:@selector(alertDidEnd:returnCode:contextInfo:) contextInfo:nil];
+		NSAlert *alert = [NSAlert alertWithMessageText:@"Image files are currently loading."
+                                         defaultButton:@"OK"
+                                       alternateButton:nil
+                                           otherButton:nil
+                             informativeTextWithFormat:@"Please click the \"Stop\" button before closing."];
+		[alert beginSheetModalForWindow:[self window] modalDelegate:nil didEndSelector:nil contextInfo:nil];
 	}
 	
 	return (numOperationsRunning == 0);
 }
 
 // -------------------------------------------------------------------------------
-//	loadFilePaths:fromPath
+//	loadFileURLs:fromURL
 // -------------------------------------------------------------------------------
--(void)loadFilePaths:(NSString *)fromPath
+- (void)loadFileURLs:(NSURL *)fromURL
 {
 	[queue cancelAllOperations];
 	
 	// start the GetPathsOperation with the root path to start the search
-	GetPathsOperation* getPathsOp = [[GetPathsOperation alloc] initWithRootPath:fromPath operationClass:[LoadOperation class] queue:queue];
+	GetPathsOperation *getPathsOp = [[GetPathsOperation alloc] initWithRootURL:fromURL queue:queue scanCount:scanCount];
 	
-	[queue addOperation: getPathsOp];	// this will start the "GetPathsOperation"
-	[getPathsOp release];
-}
-
-// -------------------------------------------------------------------------------
-//	setResultsString:string
-// -------------------------------------------------------------------------------
--(void)setResultsString:(NSString *)string
-{
-	[self willChangeValueForKey:@"imagesFoundStr"];
-	imagesFoundStr = [NSMutableString stringWithString:string];
-	[self didChangeValueForKey:@"imagesFoundStr"];
+	[queue addOperation:getPathsOp];	// this will start the "GetPathsOperation"
 }
 
 
@@ -233,13 +235,11 @@
 	NSInteger selectedRow = [theTableView selectedRow];
 	if (selectedRow != -1)
 	{
-		NSDictionary* objectDict = [tableRecords objectAtIndex: selectedRow];
+		NSDictionary *objectDict = [tableRecords objectAtIndex: selectedRow];
 		if (objectDict != nil)
 		{
-			NSString *pathStr = [objectDict valueForKey: @"path"];
-			NSString *completeURLStr = [pathStr stringByAppendingPathComponent:[objectDict valueForKey: @"name"]];
-			
-			[[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:completeURLStr]];
+			NSString *pathStr = [objectDict valueForKey:kPathKey];
+			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:pathStr]];
 		}
 	}
 }
@@ -250,46 +250,14 @@
 - (IBAction)stopAction:(id)sender
 {
 	[queue cancelAllOperations];
-		
+    
 	[myStopButton setEnabled:NO];
 	[myStartButton setEnabled:YES];
-
+    
 	[myProgressInd setHidden:YES];
 	[myProgressInd stopAnimation:self];
 	
 	[self updateCountIndicator];
-}
-
-// -------------------------------------------------------------------------------
-//	chooseDidEnd:panel:returnCode:contextInfo
-// -------------------------------------------------------------------------------
--(void)chooseDidEnd:(NSOpenPanel *)panel returnCode:(int)returnCode contextInfo:(void *)contextInfo
-{
-	[panel orderOut:self];
-	[panel release];
-	
-	if (returnCode == NSFileHandlingPanelOKButton)
-	{
-		// user has chosen a directory, start finding image files:
-		
-		[tableRecords removeAllObjects];	// clear the table data
-		[self updateCountIndicator];
-		
-		[myStopButton setEnabled:YES];
-		[myStartButton setEnabled:NO];
-		
-		[myProgressInd setHidden:NO];
-		[myProgressInd startAnimation:self];
-		
-		[self loadFilePaths:[[panel URL] path]];	// start the file search NSOperation
-		
-		// schedule our update timer for the spinning gear control
-        [self setTimer: [NSTimer scheduledTimerWithTimeInterval: 1.0
-                                                         target: self
-                                                       selector: @selector(updateProgress:)
-                                                       userInfo: nil
-                                                        repeats: YES]];
-	}
 }
 
 // -------------------------------------------------------------------------------
@@ -307,21 +275,48 @@
 	[openPanel setMessage:@"Choose a directory that has a large number image files:"];
 	[openPanel setTitle:@"Choose"];
 	
-	[openPanel beginSheetForDirectory:nil file:nil types:nil modalForWindow:[self window] modalDelegate:self didEndSelector:@selector(chooseDidEnd:returnCode:contextInfo:) contextInfo:nil];
+    [openPanel beginSheetModalForWindow:[self window] completionHandler:^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            scanCount++;
+            
+            // user has chosen a directory, start finding image files:
+            
+            [tableRecords removeAllObjects];	// clear the table data
+            [myTableView reloadData];
+            
+            [self updateCountIndicator];
+            
+            [myStopButton setEnabled:YES];
+            [myStartButton setEnabled:NO];
+            
+            [myProgressInd setHidden:NO];
+            [myProgressInd startAnimation:self];
+            
+            [self loadFileURLs:[openPanel URL]];	// start the file search NSOperation
+            
+            // schedule our update timer for our UI
+            self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                          target:self
+                                                        selector:@selector(updateProgress:)
+                                                        userInfo:nil
+                                                         repeats:YES];
+        }
+    }];
 }
 
 
 #pragma mark - Timer Support
 
 // -------------------------------------------------------------------------------
-//	updateProgress:timer
+//	updateProgress:t
 // -------------------------------------------------------------------------------
 -(void)updateProgress:(NSTimer *)t
 {
 	if ([[queue operations] count] == 0)
 	{
-		[t invalidate];
-		[self setTimer: nil];
+		[timer invalidate];
+		self.timer = nil;
 		
 		[myProgressInd stopAnimation:self];
 		[myProgressInd setHidden:YES];
@@ -333,25 +328,6 @@
 	}
 }
 
-// -------------------------------------------------------------------------------
-//	timer:
-// -------------------------------------------------------------------------------
-- (NSTimer *)timer
-{
-    return [[timer retain] autorelease];
-}
-
-// -------------------------------------------------------------------------------
-//	setTimer:value
-// -------------------------------------------------------------------------------
-- (void)setTimer:(NSTimer *)value
-{
-    if (timer != value)
-	{
-        [timer release];
-        timer = [value retain];
-    }
-}
 
 #pragma mark - Data Source
 
@@ -368,11 +344,12 @@
 // -------------------------------------------------------------------------------
 - (id)tableView:(NSTableView *)aTableView objectValueForTableColumn:(NSTableColumn *)aTableColumn row:(int)rowIndex
 {
-    id theRecord, theValue;
-    
-    theRecord = [tableRecords objectAtIndex:rowIndex];
-    theValue = [theRecord objectForKey:[aTableColumn identifier]];
-    
+    id theValue = nil;
+    if (tableRecords.count > 0)
+    {
+        id theRecord = [tableRecords objectAtIndex:rowIndex];
+        theValue = [theRecord objectForKey:[aTableColumn identifier]];
+    }
     return theValue;
 }
 
@@ -386,7 +363,6 @@
 	[tableRecords removeAllObjects];
 	[tableRecords addObjectsFromArray:sorted];
 	[myTableView reloadData];
-	[sorted release];
 }
 
 // -------------------------------------------------------------------------------
@@ -410,14 +386,12 @@
 		[inTableView setIndicatorImage:[NSImage imageNamed:@"NSAscendingSortIndicator"] inTableColumn:tableColumn];  
 		NSSortDescriptor *sortDesc = [[NSSortDescriptor alloc] initWithKey:[tableColumn identifier] ascending:YES];
 		[self sortWithDescriptor:sortDesc];
-		[sortDesc release];
 	}
 	else
 	{
 		[inTableView setIndicatorImage:[NSImage imageNamed:@"NSDescendingSortIndicator"] inTableColumn:tableColumn];
 		NSSortDescriptor *sortDesc = [[NSSortDescriptor alloc] initWithKey:[tableColumn identifier] ascending:NO];
 		[self sortWithDescriptor:sortDesc];
-		[sortDesc release];
 	}
 }
 

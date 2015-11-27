@@ -2,7 +2,7 @@
      File: LoadOperation.h 
  Abstract: NSOperation code for examining image files.
   
-  Version: 1.2 
+  Version: 1.3 
   
  Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple 
  Inc. ("Apple") in consideration of your agreement to the following 
@@ -42,20 +42,23 @@
  STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE 
  POSSIBILITY OF SUCH DAMAGE. 
   
- Copyright (C) 2009 Apple Inc. All Rights Reserved. 
+ Copyright (C) 2012 Apple Inc. All Rights Reserved. 
   
  */
 
 #import <Cocoa/Cocoa.h>
 
+// key for obtaining the current scan count
+extern NSString *kScanCountKey;
+
+// key for obtaining the path of an image
+extern NSString *kPathKey;
+
 // NSNotification name to tell the Window controller an image file as found
-extern NSString *LoadImageDidFinish;
+extern NSString *kLoadImageDidFinish;
 
 @interface LoadOperation : NSOperation
-{
-	NSString *loadPath;
-}
 
-- (id)initWithPath:(NSString *)path;
+- (id)initWithURL:(NSURL *)url scanCount:(NSInteger)scanCount;
 
 @end
